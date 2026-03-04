@@ -20,6 +20,7 @@ Static mode output files:
 - `nested_forward_architecture.mmd` (nested forward graph)
 - `<EntryClass>_dataflow.mmd` (entry class operation/data-flow graph)
 - `architecture_report.md` (report with embedded Mermaid)
+- `architecture_report.html` (browser visualization with Mermaid + tables)
 
 Runtime mode output files:
 
@@ -27,6 +28,8 @@ Runtime mode output files:
 - `runtime_module_flow.mmd` (actual module call hierarchy/timing)
 - `runtime_ops_timeline.mmd` (actual ATen op sequence/timing)
 - `runtime_architecture_report.md` (runtime summary with branch table)
+- `runtime_architecture_report.html` (browser visualization with Mermaid + tables)
+- `architecture_dashboard.html` (quick entry page linking generated HTML reports)
 
 ## Quick start
 

@@ -109,6 +109,31 @@ class RuntimeArchitectureUtilsTests(unittest.TestCase):
         self.assertEqual(op_summary["total_ops"], 2)
         self.assertEqual(op_summary["top_ops"][0]["op_name"], "aten.add")
 
+    def test_runtime_html_render(self) -> None:
+        tracer = RuntimeArchitectureTracer()
+        report = {
+            "generated_at": "2026-01-01T00:00:00Z",
+            "entry_class": "ToyModel",
+            "runtime": {"duration_ms": 3.2, "exception": None},
+            "operation_summary": {
+                "total_ops": 2,
+                "top_ops": [{"op_name": "aten.add", "count": 2, "total_ms": 0.2, "avg_ms": 0.1}],
+            },
+            "module_summary": {
+                "total_module_calls": 1,
+                "top_modules_by_time": [
+                    {"module_path": "encoder", "count": 1, "total_ms": 1.0, "avg_ms": 1.0}
+                ],
+            },
+            "branch_trace": [{"lineno": 10, "test": "x > 0", "taken": "if"}],
+        }
+        module_mermaid = "flowchart TD\n  a --> b\n"
+        ops_mermaid = "flowchart LR\n  o1 --> o2\n"
+        html_text = tracer.render_html_summary(report, module_mermaid, ops_mermaid)
+        self.assertIn("<html", html_text)
+        self.assertIn("Runtime Architecture Trace", html_text)
+        self.assertIn("aten.add", html_text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -47,6 +47,9 @@ class ForwardArchitectureAnalyzerTests(unittest.TestCase):
             paths = self.analyzer.write_outputs(report=report, output_dir=tmp_dir, max_ops_in_plot=50)
             for path in paths.values():
                 self.assertTrue(path.exists(), f"Expected file to exist: {path}")
+            html_report = paths["html_report"].read_text(encoding="utf-8")
+            self.assertIn("<html", html_report)
+            self.assertIn("mermaid", html_report)
 
 
 if __name__ == "__main__":

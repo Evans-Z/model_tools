@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import html
 import json
 import re
 from dataclasses import dataclass, field
@@ -889,12 +890,128 @@ class ForwardArchitectureAnalyzer:
         markdown_path = output_path / "architecture_report.md"
         markdown_path.write_text(markdown, encoding="utf-8")
 
+        html_bundle = self.render_html_bundle(report, nested_mermaid, dataflow_mermaid, entry_class)
+        html_path = output_path / "architecture_report.html"
+        html_path.write_text(html_bundle, encoding="utf-8")
+
         return {
             "report_json": report_path,
             "nested_mermaid": nested_mermaid_path,
             "dataflow_mermaid": dataflow_mermaid_path,
             "markdown_report": markdown_path,
+            "html_report": html_path,
         }
+
+    def render_html_bundle(
+        self,
+        report: Dict[str, Any],
+        nested_mermaid: str,
+        dataflow_mermaid: str,
+        entry_class: str,
+    ) -> str:
+        forward = report.get("forwards", {}).get(entry_class, {})
+        operations = forward.get("operations", [])
+        op_rows = operations[:80]
+        op_rows_html: List[str] = []
+        for op in op_rows:
+            op_rows_html.append(
+                "<tr>"
+                f"<td>{html.escape(str(op.get('op_id', '')))}</td>"
+                f"<td>{html.escape(str(op.get('kind', '')))}</td>"
+                f"<td>{html.escape(str(op.get('name', '')))}</td>"
+                f"<td>{html.escape(', '.join(op.get('inputs', [])[:5]))}</td>"
+                f"<td>{html.escape(', '.join(op.get('outputs', [])[:5]))}</td>"
+                "</tr>"
+            )
+        if not op_rows_html:
+            op_rows_html.append("<tr><td colspan='5'><em>No operations found.</em></td></tr>")
+
+        trunc_note = ""
+        if len(operations) > len(op_rows):
+            trunc_note = (
+                f"<p class='muted'>Showing first {len(op_rows)} operations out of "
+                f"{len(operations)}. See report.json for full details.</p>"
+            )
+
+        html_text = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Model Architecture Analysis</title>
+  <style>
+    body {{ font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }}
+    main {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
+    h1, h2 {{ margin: 0 0 12px; }}
+    .card {{ background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }}
+    .grid {{ display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }}
+    .metric {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }}
+    .metric .label {{ font-size: 12px; color: #64748b; }}
+    .metric .value {{ font-size: 18px; font-weight: 600; margin-top: 4px; }}
+    .mermaid {{ overflow-x: auto; }}
+    table {{ width: 100%; border-collapse: collapse; }}
+    th, td {{ border-bottom: 1px solid #e2e8f0; padding: 8px; text-align: left; font-size: 12px; }}
+    th {{ background: #f8fafc; font-weight: 600; }}
+    .muted {{ color: #64748b; font-size: 12px; }}
+    code {{ background: #eef2ff; padding: 2px 6px; border-radius: 6px; }}
+  </style>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({{
+      startOnLoad: true,
+      securityLevel: "loose",
+      theme: "default"
+    }});
+  </script>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1>Model Architecture Analysis</h1>
+      <p class="muted">Generated at {html.escape(str(report.get("generated_at", "")))}</p>
+      <div class="grid">
+        <div class="metric"><div class="label">Entry Class</div><div class="value">{html.escape(entry_class)}</div></div>
+        <div class="metric"><div class="label">Source File</div><div class="value"><code>{html.escape(str(report.get("source_path", "")))}</code></div></div>
+        <div class="metric"><div class="label">Classes Discovered</div><div class="value">{len(report.get("classes", {}))}</div></div>
+        <div class="metric"><div class="label">Nested forward Edges</div><div class="value">{len(report.get("nested_forward_graph", []))}</div></div>
+        <div class="metric"><div class="label">Operations in Entry forward()</div><div class="value">{len(operations)}</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Nested forward() architecture</h2>
+      <div class="mermaid">{html.escape(nested_mermaid)}</div>
+    </div>
+
+    <div class="card">
+      <h2>{html.escape(entry_class)}.forward() data-flow</h2>
+      <div class="mermaid">{html.escape(dataflow_mermaid)}</div>
+    </div>
+
+    <div class="card">
+      <h2>Operation Trace (static)</h2>
+      {trunc_note}
+      <table>
+        <thead>
+          <tr>
+            <th>Op ID</th>
+            <th>Kind</th>
+            <th>Name</th>
+            <th>Inputs</th>
+            <th>Outputs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(op_rows_html)}
+        </tbody>
+      </table>
+      <p class="muted">Full data is available in <code>report.json</code>.</p>
+    </div>
+  </main>
+</body>
+</html>
+"""
+        return html_text
 
     def render_nested_mermaid(self, report: Dict[str, Any]) -> str:
         entry_class = report["entry_class"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import html
 import importlib
 import importlib.util
 import inspect
@@ -715,12 +716,153 @@ class RuntimeArchitectureTracer:
         md_path = output_path / "runtime_architecture_report.md"
         md_path.write_text(markdown, encoding="utf-8")
 
+        html_bundle = self.render_html_summary(report, module_mermaid, ops_mermaid)
+        html_path = output_path / "runtime_architecture_report.html"
+        html_path.write_text(html_bundle, encoding="utf-8")
+
         return {
             "runtime_report_json": report_path,
             "runtime_module_mermaid": module_path,
             "runtime_ops_mermaid": ops_path,
             "runtime_markdown_report": md_path,
+            "runtime_html_report": html_path,
         }
+
+    def render_html_summary(
+        self,
+        report: Dict[str, Any],
+        module_mermaid: str,
+        ops_mermaid: str,
+    ) -> str:
+        runtime = report.get("runtime", {})
+        module_summary = report.get("module_summary", {})
+        op_summary = report.get("operation_summary", {})
+        top_ops = op_summary.get("top_ops", [])[:20]
+        top_modules = module_summary.get("top_modules_by_time", [])[:20]
+        branches = report.get("branch_trace", [])[:50]
+
+        top_ops_rows: List[str] = []
+        for row in top_ops:
+            top_ops_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(row.get('op_name', '')))}</td>"
+                f"<td>{int(row.get('count', 0))}</td>"
+                f"<td>{float(row.get('total_ms', 0.0)):.3f}</td>"
+                f"<td>{float(row.get('avg_ms', 0.0)):.3f}</td>"
+                "</tr>"
+            )
+        if not top_ops_rows:
+            top_ops_rows.append("<tr><td colspan='4'><em>No operations captured.</em></td></tr>")
+
+        top_modules_rows: List[str] = []
+        for row in top_modules:
+            top_modules_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(row.get('module_path', '')))}</td>"
+                f"<td>{int(row.get('count', 0))}</td>"
+                f"<td>{float(row.get('total_ms', 0.0)):.3f}</td>"
+                f"<td>{float(row.get('avg_ms', 0.0)):.3f}</td>"
+                "</tr>"
+            )
+        if not top_modules_rows:
+            top_modules_rows.append("<tr><td colspan='4'><em>No module calls captured.</em></td></tr>")
+
+        branch_rows: List[str] = []
+        for row in branches:
+            branch_rows.append(
+                "<tr>"
+                f"<td>{int(row.get('lineno', 0))}</td>"
+                f"<td><code>{html.escape(str(row.get('test', '')))}</code></td>"
+                f"<td>{html.escape(str(row.get('taken', '')))}</td>"
+                "</tr>"
+            )
+        if not branch_rows:
+            branch_rows.append("<tr><td colspan='3'><em>No if-branches found in traced files.</em></td></tr>")
+
+        html_text = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Runtime Architecture Trace</title>
+  <style>
+    body {{ font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }}
+    main {{ max-width: 1280px; margin: 0 auto; padding: 24px; }}
+    h1, h2 {{ margin: 0 0 12px; }}
+    .card {{ background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }}
+    .grid {{ display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }}
+    .metric {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }}
+    .metric .label {{ font-size: 12px; color: #64748b; }}
+    .metric .value {{ font-size: 18px; font-weight: 600; margin-top: 4px; }}
+    .mermaid {{ overflow-x: auto; }}
+    table {{ width: 100%; border-collapse: collapse; }}
+    th, td {{ border-bottom: 1px solid #e2e8f0; padding: 8px; text-align: left; font-size: 12px; }}
+    th {{ background: #f8fafc; font-weight: 600; }}
+    code {{ background: #eef2ff; padding: 2px 6px; border-radius: 6px; }}
+    .muted {{ color: #64748b; font-size: 12px; }}
+  </style>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({{
+      startOnLoad: true,
+      securityLevel: "loose",
+      theme: "default"
+    }});
+  </script>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1>Runtime Architecture Trace</h1>
+      <p class="muted">Generated at {html.escape(str(report.get("generated_at", "")))}</p>
+      <div class="grid">
+        <div class="metric"><div class="label">Entry Class</div><div class="value">{html.escape(str(report.get("entry_class", "")))}</div></div>
+        <div class="metric"><div class="label">Run Duration</div><div class="value">{float(runtime.get("duration_ms", 0.0)):.3f} ms</div></div>
+        <div class="metric"><div class="label">Total ATen Ops</div><div class="value">{int(op_summary.get("total_ops", 0))}</div></div>
+        <div class="metric"><div class="label">Total Module Calls</div><div class="value">{int(module_summary.get("total_module_calls", 0))}</div></div>
+        <div class="metric"><div class="label">Exception</div><div class="value">{html.escape(str(runtime.get("exception", "None")))}</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Real module call flow</h2>
+      <div class="mermaid">{html.escape(module_mermaid)}</div>
+    </div>
+
+    <div class="card">
+      <h2>Real ATen operation timeline</h2>
+      <div class="mermaid">{html.escape(ops_mermaid)}</div>
+    </div>
+
+    <div class="card">
+      <h2>Top operations (by count)</h2>
+      <table>
+        <thead><tr><th>Operation</th><th>Count</th><th>Total ms</th><th>Avg ms</th></tr></thead>
+        <tbody>{''.join(top_ops_rows)}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Top modules (by total time)</h2>
+      <table>
+        <thead><tr><th>Module</th><th>Calls</th><th>Total ms</th><th>Avg ms</th></tr></thead>
+        <tbody>{''.join(top_modules_rows)}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Branch trace (executed path)</h2>
+      <table>
+        <thead><tr><th>Line</th><th>Condition</th><th>Taken</th></tr></thead>
+        <tbody>{''.join(branch_rows)}</tbody>
+      </table>
+      <p class="muted">Full trace is available in <code>runtime_report.json</code>.</p>
+    </div>
+  </main>
+</body>
+</html>
+"""
+        return html_text
 
     def render_module_flow_mermaid(self, report: Dict[str, Any], max_nodes: int = 220) -> str:
         calls = report.get("model_calls", [])

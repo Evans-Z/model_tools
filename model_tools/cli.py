@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 from pathlib import Path
 
@@ -125,6 +126,79 @@ def summarize_runtime(runtime_report: dict) -> str:
     )
 
 
+def write_dashboard_html(
+    output_dir: str | Path,
+    static_output_paths: dict,
+    runtime_output_paths: dict,
+    static_report: dict | None,
+    runtime_report: dict | None,
+) -> Path:
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    dashboard_path = output_path / "architecture_dashboard.html"
+
+    static_html = static_output_paths.get("html_report")
+    runtime_html = runtime_output_paths.get("runtime_html_report")
+    static_rel = static_html.name if static_html else None
+    runtime_rel = runtime_html.name if runtime_html else None
+
+    static_summary = summarize(static_report) if static_report is not None else "Static analysis not generated."
+    runtime_summary = summarize_runtime(runtime_report) if runtime_report is not None else "Runtime trace not generated."
+
+    static_link = (
+        f'<a href="{html.escape(static_rel)}" target="_blank">Open static HTML report</a>'
+        if static_rel
+        else "<span class='muted'>Not available</span>"
+    )
+    runtime_link = (
+        f'<a href="{html.escape(runtime_rel)}" target="_blank">Open runtime HTML report</a>'
+        if runtime_rel
+        else "<span class='muted'>Not available</span>"
+    )
+
+    html_text = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture Dashboard</title>
+  <style>
+    body {{ font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }}
+    main {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
+    .card {{ background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }}
+    pre {{ white-space: pre-wrap; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px; font-size: 12px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }}
+    a {{ color: #1d4ed8; text-decoration: none; font-weight: 600; }}
+    a:hover {{ text-decoration: underline; }}
+    .muted {{ color: #64748b; }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1>Architecture Dashboard</h1>
+      <p class="muted">Quick entry page for generated HTML visualizations.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h2>Static Analysis</h2>
+        <p>{static_link}</p>
+        <pre>{html.escape(static_summary)}</pre>
+      </div>
+      <div class="card">
+        <h2>Runtime Trace</h2>
+        <p>{runtime_link}</p>
+        <pre>{html.escape(runtime_summary)}</pre>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
+"""
+    dashboard_path.write_text(html_text, encoding="utf-8")
+    return dashboard_path
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -147,6 +221,7 @@ def main() -> None:
     runtime_report = None
     runtime_output_paths = {}
     runtime_error = None
+    dashboard_path = None
 
     if run_static:
         input_shapes = parse_input_shape_overrides(args.input_shape)
@@ -198,6 +273,16 @@ def main() -> None:
         print(f"- {key}: {path}")
     for key, path in runtime_output_paths.items():
         print(f"- {key}: {path}")
+
+    if static_output_paths or runtime_output_paths:
+        dashboard_path = write_dashboard_html(
+            output_dir=args.output_dir,
+            static_output_paths=static_output_paths,
+            runtime_output_paths=runtime_output_paths,
+            static_report=static_report,
+            runtime_report=runtime_report,
+        )
+        print(f"- architecture_dashboard_html: {dashboard_path}")
 
     if args.print_json:
         if static_report is not None:
